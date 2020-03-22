@@ -1,11 +1,11 @@
 #![deny(rust_2018_idioms)]
-use ndarray::{s, Axis, Array1, ArrayView1, ArrayView2};
+use ndarray::{s, stack, Axis, Array1, ArrayView2};
 use numpy::{IntoPyArray, PyArray1, PyArray2};
 use pyo3::prelude::{pymodule, Py, PyModule, PyResult, Python};
 
 #[pymodule]
 fn _rustlib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    fn rdp(points: ArrayView2<'_, f64>, epsilon: &f64) -> Array1<f64> {
+    fn rdp(points: ArrayView2<'_, f64>, epsilon: &f64) -> Array1<bool> {
         if points.is_empty() {
             return Array1::default((0,));
         }
@@ -35,17 +35,17 @@ fn _rustlib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
             result[i] = distance;
         }
 
-        result
-        /*
-        if dmax > *epsilon {
-            let mut intermediate = compute_rdp(&points[..=index], &*epsilon);
-            intermediate.pop();
-            intermediate.extend_from_slice(&compute_rdp(&points[index..], &*epsilon));
-            intermediate
+        if d_max > *epsilon {
+            let head = rdp(points.slice(s![..=i_max, ..]), epsilon);
+            let tail = rdp(points.slice(s![i_max.., ..]), epsilon);
+            stack(Axis(0), &[head.slice(s![..-1]), tail.view()]).unwrap()
         } else {
-            vec![*points.first().unwrap(), *points.last().unwrap()]
+            let result_length = points.len_of(Axis(0));
+            let mut result = Array1::from_elem((result_length,), false);
+            result[0] = true;
+            result[result_length - 1] = true;
+            result
         }
-        */
     }
 
     #[pyfn(m, "rdp")]
@@ -53,7 +53,7 @@ fn _rustlib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         py: Python<'_>,
         points: &PyArray2<f64>,
         epsilon: f64
-    ) -> Py<PyArray1<f64>> {
+    ) -> Py<PyArray1<bool>> {
         let points = points.as_array();
         rdp(points, &epsilon).into_pyarray(py).to_owned()
     }
