@@ -20,3 +20,8 @@ features = ["extension-module"]
 
 [dev-dependencies]
 ndarray-rand = "0.11"
+criterion = { version = "0.3" }
+
+[[bench]]
+name = "rdp"
+harness = false

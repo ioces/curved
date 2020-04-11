@@ -1,4 +1,4 @@
-use ndarray::{s, Axis, Array1, Array2, ArrayViewMut1, ArrayView1, ArrayView2, CowArray, Ix1, Ix2};
+use ndarray::{s, Axis, Array1, ArrayViewMut1, ArrayView1, ArrayView2, CowArray, Ix1, Ix2};
 use numpy::{convert::IntoPyArray, PyArray1, PyArray2};
 use pyo3::prelude::{pymodule, Py, PyModule, PyResult, Python};
 
@@ -19,22 +19,11 @@ pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
     mask
 }
 
-fn line_point_distances(start: ArrayView1<'_, f64>, end: ArrayView1<'_, f64>, points: ArrayView2<'_, f64>) -> Array1<f64> {
-    let mut unit: Array1<f64> = &end - &start;
-    unit /= unit.dot(&unit).sqrt();
-    let end_mids: Array2<f64> = &end.broadcast(points.raw_dim()).unwrap() - &points;
-    let end_mid_2 = (&end_mids * &end_mids).sum_axis(Axis(1));
-    let end_mid_unit = unit.dot(&end_mids.reversed_axes());
-    
-    (end_mid_2 - &end_mid_unit * &end_mid_unit).mapv(f64::sqrt)
-}
-
-fn line_point_distances_3(
+fn line_point_distances(
     start: ArrayView1<'_, f64>,
     end: ArrayView1<'_, f64>,
     cas: ArrayView2<'_, f64>,
-    mag_cas_2: ArrayView1<'_, f64>,
-    points: ArrayView2<'_, f64>
+    mag_cas_2: ArrayView1<'_, f64>
 ) -> Array1<f64> {
     let ab: Array1<f64> = &end - &start;
     let ab_mag = ab.dot(&ab).sqrt();
@@ -42,29 +31,6 @@ fn line_point_distances_3(
 
     let mag_ads_2 = cas.dot(&ab_u).mapv(|v| v.powi(2));
     &mag_cas_2 - &mag_ads_2
-}
-
-fn line_point_distances_4(start: ArrayView1<'_, f64>, end: ArrayView1<'_, f64>, points: ArrayView2<'_, f64>) -> Array1<f64> {
-    let ab = &end - &start;
-    let ab_mag = ab.dot(&ab).sqrt();
-    let ab_u = ab / ab_mag;
-
-    points.map_axis(Axis(1), |point| {
-        let e = &end - &point;
-        (e.dot(&e) - ab_u.dot(&e).powi(2)).sqrt()
-    })
-}
-
-fn line_point_distances_2(start: ArrayView1<'_, f64>, end: ArrayView1<'_, f64>, points: ArrayView2<'_, f64>) -> Array1<f64> {
-    let dx = end[0] - start[0];
-    let dy = end[1] - start[1];
-    let sy = start[1];
-    let sx = start[0];
-
-    points.map_axis(Axis(1), |point| {
-        let s = ((sy - point[1]) * dx - (sx - point[0]) * dy) / (dx.powi(2) + dy.powi(2));
-        s.abs() * dx.hypot(dy)
-    })
 }
 
 fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<Buffer>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
@@ -80,11 +46,7 @@ fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<Buffer>, mut mask
             Buffer(acs.into(), mag_acs_2.into())
         }
     };
-    let distances = line_point_distances_3(start, end, buffer.0.view(), buffer.1.view(), points);
-
-    /*
-    let distances = line_point_distances_3(start, end, points);
-    */
+    let distances = line_point_distances(start, end, buffer.0.view(), buffer.1.view());
 
     // Find the point with the maximum distance from the line joining the endpoints.
     let mut d_max = 0.0;
