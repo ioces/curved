@@ -22,17 +22,21 @@ pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
     mask
 }
 
-fn line_point_distances(
+fn line_point_distances_2(
     start: ArrayView1<'_, f64>,
     end: ArrayView1<'_, f64>,
     buffer: &LineStartPointBuffer<'_>
 ) -> Array1<f64> {
+    // Calculate the unit vector from the start (A) to the end (B)
     let ab: Array1<f64> = &end - &start;
-    let ab_mag = ab.dot(&ab).sqrt();
-    let ab_u = ab / ab_mag;
+    let ab_magnitude = ab.dot(&ab).sqrt();
+    let ab_unit = ab / ab_magnitude;
 
-    let mag_ads_2 = buffer.vectors.dot(&ab_u).mapv(|v| v.powi(2));
-    &buffer.magnitudes_2 - &mag_ads_2
+    // Project the point (C) to start (A) vector onto the unit vector using a dot product.
+    // It should return the magnitude of the vector from the start (A) to the point closest
+    // to the AB line (D).
+    let ad_magnitudes_2 = buffer.vectors.dot(&ab_unit).mapv(|v| v.powi(2));
+    &buffer.magnitudes_2 - &ad_magnitudes_2
 }
 
 fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuffer>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
@@ -48,22 +52,22 @@ fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuf
             LineStartPointBuffer { vectors: vectors.into(), magnitudes_2: magnitudes_2.into() }
         }
     };
-    let distances = line_point_distances(start, end, &buffer);
+    let distances_2 = line_point_distances_2(start, end, &buffer);
 
     // Find the point with the maximum distance from the line joining the endpoints.
-    let mut d_max = 0.0;
+    let mut d_2_max = 0.0;
     let mut i_max: usize = 0;
-    for (i, d) in distances.iter().enumerate().take(distances.len() - 1).skip(1) {
-        if d > &d_max {
+    for (i, d) in distances_2.iter().enumerate().take(distances_2.len() - 1).skip(1) {
+        if d > &d_2_max {
             i_max = i;
-            d_max = *d;
+            d_2_max = *d;
         }
     }
 
     // If that point is further away from the line joining the endpoints than epsilon^2,
     // mark it as retained and recurse the algorithm for the line joining start->point
     // and point->end.
-    if d_max > epsilon_2 {
+    if d_2_max > epsilon_2 {
         mask[i_max] = true;
         rdp_recurse(points.slice(s![..=i_max, ..]),
             Some(LineStartPointBuffer { vectors: buffer.vectors.slice(s![..=i_max, ..]).into(), magnitudes_2: buffer.magnitudes_2.slice(s![..=i_max]).into() }),
