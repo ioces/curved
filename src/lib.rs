@@ -3,7 +3,10 @@ use numpy::{convert::IntoPyArray, PyArray1, PyArray2};
 use pyo3::prelude::{pymodule, Py, PyModule, PyResult, Python};
 
 
-struct Buffer<'a>(CowArray<'a, f64, Ix2>, CowArray<'a, f64, Ix1>);
+struct LineStartPointBuffer<'a> {
+    vectors: CowArray<'a, f64, Ix2>,
+    magnitudes_2: CowArray<'a, f64, Ix1>,
+}
 
 
 pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
@@ -22,18 +25,17 @@ pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
 fn line_point_distances(
     start: ArrayView1<'_, f64>,
     end: ArrayView1<'_, f64>,
-    cas: ArrayView2<'_, f64>,
-    mag_cas_2: ArrayView1<'_, f64>
+    buffer: &LineStartPointBuffer<'_>
 ) -> Array1<f64> {
     let ab: Array1<f64> = &end - &start;
     let ab_mag = ab.dot(&ab).sqrt();
     let ab_u = ab / ab_mag;
 
-    let mag_ads_2 = cas.dot(&ab_u).mapv(|v| v.powi(2));
-    &mag_cas_2 - &mag_ads_2
+    let mag_ads_2 = buffer.vectors.dot(&ab_u).mapv(|v| v.powi(2));
+    &buffer.magnitudes_2 - &mag_ads_2
 }
 
-fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<Buffer>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
+fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuffer>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
     // Get the start and end points of the curve
     let start = points.slice(s![0, ..]);
     let end = points.slice(s![-1, ..]);
@@ -41,12 +43,12 @@ fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<Buffer>, mut mask
     let buffer = match opt_buffer {
         Some(b) => b,
         None => {
-            let acs = &points - &end;
-            let mag_acs_2 = (&acs * &acs).sum_axis(Axis(1));
-            Buffer(acs.into(), mag_acs_2.into())
+            let vectors = &points - &start;
+            let magnitudes_2 = (&vectors * &vectors).sum_axis(Axis(1));
+            LineStartPointBuffer { vectors: vectors.into(), magnitudes_2: magnitudes_2.into() }
         }
     };
-    let distances = line_point_distances(start, end, buffer.0.view(), buffer.1.view());
+    let distances = line_point_distances(start, end, &buffer);
 
     // Find the point with the maximum distance from the line joining the endpoints.
     let mut d_max = 0.0;
@@ -63,15 +65,11 @@ fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<Buffer>, mut mask
     // and point->end.
     if d_max > epsilon_2 {
         mask[i_max] = true;
-        /*rdp_recurse(points.slice(s![..=i_max, ..]),
-            Some(Buffer(buffer.0.slice(s![..=i_max, ..]).into(), buffer.1.slice(s![..=i_max]).into())),
+        rdp_recurse(points.slice(s![..=i_max, ..]),
+            Some(LineStartPointBuffer { vectors: buffer.vectors.slice(s![..=i_max, ..]).into(), magnitudes_2: buffer.magnitudes_2.slice(s![..=i_max]).into() }),
             mask.slice_mut(s![..=i_max]),
-            epsilon_2);*/
-        rdp_recurse(points.slice(s![..=i_max, ..]), None, mask.slice_mut(s![..=i_max]), epsilon_2);
-        rdp_recurse(points.slice(s![i_max.., ..]),
-            Some(Buffer(buffer.0.slice(s![i_max.., ..]).into(), buffer.1.slice(s![i_max..]).into())),
-            mask.slice_mut(s![i_max..]),
             epsilon_2);
+        rdp_recurse(points.slice(s![i_max.., ..]), None, mask.slice_mut(s![i_max..]), epsilon_2);
     }
 }
 
