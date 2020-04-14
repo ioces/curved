@@ -55,15 +55,15 @@ fn line_point_distances_2(
     &buffer.magnitudes_2 - &ad_magnitudes_2
 }
 
-fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuffer<'_>>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
+fn rdp_recurse(points: ArrayView2<'_, f64>, buffer: Option<LineStartPointBuffer<'_>>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
     // Get the start and end points of the curve
     let start = points.slice(s![0, ..]);
     let end = points.slice(s![-1, ..]);
 
-    let buffer = match opt_buffer {
-        Some(b) => b,
-        None => LineStartPointBuffer::from_points(points),
-    };
+    // Calculate some buffered line start to point values.
+    let buffer = buffer.unwrap_or_else(|| LineStartPointBuffer::from_points(points));
+
+    // Calculate the distance squared between the line and each point.
     let distances_2 = line_point_distances_2(start, end, &buffer);
 
     // Find the point with the maximum distance from the line joining the endpoints.
