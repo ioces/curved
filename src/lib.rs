@@ -1,12 +1,6 @@
-use ndarray::{s, Axis, Array1, ArrayViewMut1, ArrayView1, ArrayView2, CowArray, Ix1, Ix2};
+use ndarray::{s, Axis, Array1, ArrayViewMut1, ArrayView1, ArrayView2, CowArray, Ix1, Ix2, Slice};
 use numpy::{convert::IntoPyArray, PyArray1, PyArray2};
 use pyo3::prelude::{pymodule, Py, PyModule, PyResult, Python};
-
-
-struct LineStartPointBuffer<'a> {
-    vectors: CowArray<'a, f64, Ix2>,
-    magnitudes_2: CowArray<'a, f64, Ix1>,
-}
 
 
 pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
@@ -21,6 +15,28 @@ pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
 
     mask
 }
+
+
+struct LineStartPointBuffer<'a> {
+    vectors: CowArray<'a, f64, Ix2>,
+    magnitudes_2: CowArray<'a, f64, Ix1>,
+}
+
+
+impl LineStartPointBuffer<'_> {
+    fn from_points<'a>(points: ArrayView2<f64>) -> LineStartPointBuffer<'a> {
+        let start = points.slice(s![0, ..]);
+        let vectors = &points - &start;
+        let magnitudes_2 = (&vectors * &vectors).sum_axis(Axis(1));
+        LineStartPointBuffer { vectors: vectors.into(), magnitudes_2: magnitudes_2.into() }
+    }
+
+    fn subset(&self, slice: Slice) -> LineStartPointBuffer {
+        LineStartPointBuffer {vectors: self.vectors.slice(s![slice, ..]).into(),
+            magnitudes_2: self.magnitudes_2.slice(s![slice]).into()}
+    }
+}
+
 
 fn line_point_distances_2(
     start: ArrayView1<'_, f64>,
@@ -39,18 +55,14 @@ fn line_point_distances_2(
     &buffer.magnitudes_2 - &ad_magnitudes_2
 }
 
-fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuffer>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
+fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuffer<'_>>, mut mask: ArrayViewMut1<'_, bool>, epsilon_2: f64) {
     // Get the start and end points of the curve
     let start = points.slice(s![0, ..]);
     let end = points.slice(s![-1, ..]);
 
     let buffer = match opt_buffer {
         Some(b) => b,
-        None => {
-            let vectors = &points - &start;
-            let magnitudes_2 = (&vectors * &vectors).sum_axis(Axis(1));
-            LineStartPointBuffer { vectors: vectors.into(), magnitudes_2: magnitudes_2.into() }
-        }
+        None => LineStartPointBuffer::from_points(points),
     };
     let distances_2 = line_point_distances_2(start, end, &buffer);
 
@@ -70,7 +82,7 @@ fn rdp_recurse(points: ArrayView2<'_, f64>, opt_buffer: Option<LineStartPointBuf
     if d_2_max > epsilon_2 {
         mask[i_max] = true;
         rdp_recurse(points.slice(s![..=i_max, ..]),
-            Some(LineStartPointBuffer { vectors: buffer.vectors.slice(s![..=i_max, ..]).into(), magnitudes_2: buffer.magnitudes_2.slice(s![..=i_max]).into() }),
+            Some(buffer.subset(Slice::from(..=i_max))),
             mask.slice_mut(s![..=i_max]),
             epsilon_2);
         rdp_recurse(points.slice(s![i_max.., ..]), None, mask.slice_mut(s![i_max..]), epsilon_2);
