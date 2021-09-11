@@ -1,5 +1,7 @@
 /target
-/build
+/dist
+.venv
+.vscode
 *.egg-info
 *.so
 __pycache__
