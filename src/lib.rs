@@ -1,6 +1,6 @@
 use ndarray::{s, Axis, Array1, ArrayViewMut1, ArrayView1, ArrayView2, CowArray, Ix1, Ix2, Slice};
 use numpy::{convert::IntoPyArray, PyArray1, PyArray2};
-use pyo3::prelude::{pymodule, Py, PyModule, PyResult, Python};
+use pyo3::prelude::{pymodule, pyfunction, wrap_pyfunction, Py, PyModule, PyResult, Python};
 
 
 pub fn rdp(points: ArrayView2<'_, f64>, epsilon: f64) -> Array1<bool> {
@@ -91,15 +91,17 @@ fn rdp_recurse(points: ArrayView2<'_, f64>, buffer: Option<LineStartPointBuffer<
 
 #[pymodule]
 fn _rustlib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    #[pyfn(m, "rdp")]
+    #[pyfunction]
     fn rdp(
         py: Python<'_>,
         points: &PyArray2<f64>,
         epsilon: f64
     ) -> Py<PyArray1<bool>> {
-        let points = points.as_array();
-        crate::rdp(points, epsilon).into_pyarray(py).to_owned()
+        let points = points.readonly();
+        crate::rdp(points.as_array(), epsilon).into_pyarray(py).to_owned()
     }
+
+    m.add_function(wrap_pyfunction!(rdp, m)?)?;
 
     Ok(())
 }
