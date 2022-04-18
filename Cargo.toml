@@ -17,7 +17,9 @@ features = ["extension-module"]
 
 [dev-dependencies]
 ndarray-rand = "0.14"
+ndarray-stats = ">= 0.5"
 criterion = { version = "0.3" }
+pprof = { version = "0.4", features = ["criterion", "flamegraph"] }
 
 [[bench]]
 name = "rdp"
